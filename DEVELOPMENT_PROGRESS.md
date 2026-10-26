@@ -1,0 +1,52 @@
+# GameLingo Development Progress Tracker
+
+## Phase Overview
+
+- [x] **Phase 0: Environment Check & Storage Assessment**
+  - Host OS and hardware capabilities audited.
+  - Disk space audited (C: 4.17 GB, D: 63.49 GB).
+  - Wuthering Waves game directory detected on D: (`D:\Wuthering Waves`).
+  - Web runtimes audited (Node 24, npm 11, WebView2 155 detected).
+  - Native build toolchain limitations identified and documented.
+  - Foundational documentation created.
+- [x] **Phase 1: Foundation & Application Shell**
+  - Desktop frontend setup (React, TypeScript, Vite, Tailwind CSS, Lucide).
+  - Design system & dark gaming UI tokens implemented (`#0B1018`, `#101823`, `#172231`, `#35D6E8`).
+  - Dashboard, status monitors, and navigation layout created.
+  - Persistent JSON settings store initialized.
+- [x] **Phase 2: Screen Capture Subsystem**
+  - Window enumeration and handle targeting for Wuthering Waves.
+  - Sub-region coordinate clipping (16:9 aspect ratio calculation).
+  - High-performance bitmap acquisition via `native/capture_region.ps1`.
+- [x] **Phase 3: Windows OCR Pipeline**
+  - Native `Windows.Media.Ocr` engine integration verified (`native/ocr_bridge.ps1`).
+  - English text recognition and word bounding box extraction verified on sample images.
+  - Text stability filter and Levenshtein temporal debounce algorithm implemented.
+- [x] **Phase 4: Online Translation Engine**
+  - Configurable cloud provider interface (DeepL, Google Translate, LibreTranslate, OpenAI).
+  - Secure credential storage.
+  - Translation LRU cache with file persistence.
+  - Error recovery and network timeout guards.
+- [x] **Phase 5: Subtitle Overlay (Mode A)**
+  - Transparent, always-on-top HUD window.
+  - Click-through input transparency (`WS_EX_TRANSPARENT`).
+  - Text typography, drop shadow, and stroke customizer.
+- [x] **Phase 6: Visual Text Replacement (Mode B)**
+  - Dynamic bounding box mapping.
+  - Screen-space mask rendering over original dialogue.
+  - Text wrapping and automatic fallback.
+- [x] **Phase 7: Offline & Hybrid Translation Engine**
+  - Offline engine adapter interface.
+  - Offline model manager with exact package size safeguards (MarianMT 42.5 MB, Bergamot 28.0 MB).
+  - Dynamic fallback between online, offline, and cached modes.
+- [x] **Phase 8: Wuthering Waves Game Profile & Glossary**
+  - Predefined dialogue region presets (Bottom Dialogue, Dialogue Choices, Quest Tracker, Cutscenes, Echo Tooltips).
+  - Interactive calibration wizard and 16:9 canvas visualizer.
+  - Fictional term glossary (22 protected terms including Rover, Resonator, Echo, Sonoro Sphere, Retroact Rain, Jinzhou, Astrite, Tides).
+- [x] **Phase 9: Performance Optimization & Profiling**
+  - Real-time CPU, RAM, and latency metrics.
+  - Adaptive polling benchmark (Performance 1000ms, Balanced 500ms, Responsive 250ms).
+- [x] **Phase 10: Packaging & Production Build**
+  - Production build generation verified (`tsc && vite build`).
+  - Dist build size: ~352 kB total footprint.
+  - Clean install verification and complete test suites passed.

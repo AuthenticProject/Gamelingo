@@ -1,0 +1,81 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-main: #0B1018;
+  --bg-sidebar: #101823;
+  --bg-surface: #172231;
+  --color-accent: #35D6E8;
+  --color-blue: #448AFF;
+  --color-success: #35C98A;
+  --color-text: #F5F7FA;
+  --color-muted: #93A4B8;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-main);
+  color: var(--color-text);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #101823;
+}
+::-webkit-scrollbar-thumb {
+  background: #27384E;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #35D6E8;
+}
+
+/* Glassmorphism Panel Utilities */
+.glass-panel {
+  background: rgba(23, 34, 49, 0.75);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(53, 214, 232, 0.12);
+}
+
+.glass-panel-hover:hover {
+  border-color: rgba(53, 214, 232, 0.35);
+  box-shadow: 0 0 20px rgba(53, 214, 232, 0.1);
+}
+
+.cyber-card {
+  background: #172231;
+  border: 1px solid #27384E;
+  border-radius: 0.5rem;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.cyber-card:hover {
+  border-color: rgba(53, 214, 232, 0.4);
+  transform: translateY(-1px);
+}
+
+/* Subtitle HUD Mode Styles */
+.game-subtitle-text {
+  text-shadow: 0 0 8px rgba(0, 0, 0, 0.95), 0 2px 4px rgba(0, 0, 0, 0.9), 0 0 2px #000;
+  -webkit-text-stroke: 1px rgba(0, 0, 0, 0.8);
+}
+
+/* Pulse animation for scanning radar */
+@keyframes radar-sweep {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+.animate-radar {
+  animation: radar-sweep 2s ease-in-out infinite;
+}
