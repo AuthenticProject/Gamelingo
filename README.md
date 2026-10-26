@@ -70,3 +70,4 @@ gamelingo/
 
 Proprietary / Open Source under MIT License.
 GameLingo is not affiliated with or endorsed by Kuro Games or Wuthering Waves.
+# Gamelingo
