@@ -1,15 +1,45 @@
+import { TextBlock, CandidateWindow } from '../types';
+
 export interface BackendState {
   isCapturing: boolean;
-  gameDetected: boolean;
-  gameProcessId: number | null;
-  gameWindowTitle: string | null;
-  activeRegion: { x: number; y: number; width: number; height: number };
+  captureStatus: 'active' | 'paused' | 'standby';
+  captureMode: 'full' | 'custom' | 'dialogue';
+  displayMode: 'replacement' | 'subtitle';
+  performancePreset: 'performance' | 'balanced' | 'responsive';
   pollingSpeedMs: number;
+  gameDetected: boolean;
+  manualWindowSelected: boolean;
+  selectedWindow: CandidateWindow | null;
+  allWindows: CandidateWindow[];
+  activeRegion: { x: number; y: number; width: number; height: number };
   engineType: string;
   onlineProvider: string;
-  latestOCR: { fullText: string; lines: any[]; warmOcrLatencyMs: number };
-  latestTranslation: { originalText: string; translatedText: string; latencyMs: number; engineUsed: string; timestamp: number };
-  stats: { ocrAvgMs: number; transAvgMs: number; totalFramesProcessed: number; cacheHits: number };
+  detectedBlockCount: number;
+  translatedBlockCount: number;
+  detectedBlocks: TextBlock[];
+  translatedBlocks: TextBlock[];
+  latestOCR: {
+    fullText: string;
+    lines: any[];
+    blocks: TextBlock[];
+    warmOcrLatencyMs: number;
+  };
+  latestTranslation: {
+    originalText: string;
+    translatedText: string;
+    blocks: TextBlock[];
+    latencyMs: number;
+    engineUsed: string;
+    timestamp: number;
+  };
+  stats: {
+    ocrAvgMs: number;
+    transAvgMs: number;
+    totalFramesProcessed: number;
+    cacheHits: number;
+    cpuUsagePercent: number;
+    ramUsageMb: number;
+  };
 }
 
 const API_BASE = 'http://127.0.0.1:5174/api';
@@ -33,6 +63,30 @@ export class BridgeService {
       return await res.json();
     } catch {
       return null;
+    }
+  }
+
+  public async getWindows(): Promise<{ success: boolean; gameDetected: boolean; selectedWindow: CandidateWindow | null; windows: CandidateWindow[] } | null> {
+    try {
+      const res = await fetch(`${API_BASE}/windows`, { signal: AbortSignal.timeout(2500) });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    }
+  }
+
+  public async selectWindow(handle: number): Promise<boolean> {
+    try {
+      const res = await fetch(`${API_BASE}/select-window`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ handle }),
+        signal: AbortSignal.timeout(2000),
+      });
+      return res.ok;
+    } catch {
+      return false;
     }
   }
 
@@ -77,17 +131,21 @@ export class BridgeService {
     }
   }
 
-  public async triggerTestFrame(text: string): Promise<any> {
+  public async triggerTestFrame(text?: string): Promise<any> {
     try {
       const res = await fetch(`${API_BASE}/test-frame`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),
-        signal: AbortSignal.timeout(4000),
+        signal: AbortSignal.timeout(5000),
       });
       return await res.json();
     } catch {
       return null;
     }
+  }
+
+  public getPreviewFrameUrl(): string {
+    return `${API_BASE}/preview-frame?t=${Date.now()}`;
   }
 }

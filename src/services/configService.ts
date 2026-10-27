@@ -2,6 +2,15 @@ import { AppSettings, CaptureRegion } from '../types';
 
 export const WUTHERING_WAVES_PRESETS: CaptureRegion[] = [
   {
+    id: 'ww-full-window',
+    name: 'Full Game Translation (Universal)',
+    xRatio: 0,
+    yRatio: 0,
+    wRatio: 1.0,
+    hRatio: 1.0,
+    description: 'Universal OCR across entire game window: dialogue, menus, inventory, skills, and quests.'
+  },
+  {
     id: 'ww-dialogue-bottom',
     name: 'Main Story & NPC Dialogue (Bottom)',
     xRatio: 0.20,
@@ -29,15 +38,6 @@ export const WUTHERING_WAVES_PRESETS: CaptureRegion[] = [
     description: 'Tracks current mission description, tasks, and world quests.'
   },
   {
-    id: 'ww-cutscene-center',
-    name: 'Cinematic Subtitles (Bottom Center)',
-    xRatio: 0.15,
-    yRatio: 0.82,
-    wRatio: 0.70,
-    hRatio: 0.14,
-    description: 'Full-width cinematic subtitles during cutscenes.'
-  },
-  {
     id: 'ww-echo-tooltip',
     name: 'Echo & Item Tooltips (Center Right)',
     xRatio: 0.40,
@@ -52,12 +52,13 @@ export const DEFAULT_SETTINGS: AppSettings = {
   selectedGame: 'Wuthering Waves',
   targetLanguage: 'id',
   sourceLanguage: 'en',
-  translationMode: 'subtitle',
+  translationMode: 'replacement',
+  captureMode: 'full',
   engineType: 'hybrid',
   onlineProvider: 'google',
   pollingSpeed: 'balanced',
   pollingIntervalMs: 500,
-  selectedRegionId: 'ww-dialogue-bottom',
+  selectedRegionId: 'ww-full-window',
   hotkeys: {
     toggleTranslation: 'Control+Alt+KeyT',
     toggleOverlay: 'Control+Alt+KeyO',

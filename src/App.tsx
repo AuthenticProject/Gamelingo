@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sidebar, NavTab } from './components/Sidebar';
 import { Header } from './components/Header';
 import { SubtitleOverlay } from './components/SubtitleOverlay';
@@ -14,7 +14,6 @@ import { DiagnosticsPage } from './pages/DiagnosticsPage';
 import { GeneralSettings } from './pages/GeneralSettings';
 
 import { ConfigService, WUTHERING_WAVES_PRESETS } from './services/configService';
-import { TranslationService } from './services/translationService';
 import { TranslationCacheService } from './services/cacheService';
 import { BridgeService, BackendState } from './services/bridgeService';
 
@@ -23,15 +22,8 @@ import {
   TranslationResult, 
   OCRResult, 
   GameWindowInfo,
-  BoundingBox
+  CandidateWindow
 } from './types';
-
-const WW_SAMPLE_DIALOGUES = [
-  "Rover: Something doesn't feel right here.",
-  "Yangyang: The Retroact Rain will begin soon. We must report back to Magistrate Jinhsi in Jinzhou.",
-  "Chixia: Don't worry! My Dual Pistols and Fusion Forte are ready for any Tacet Discord!",
-  "Baizhi: The frequency fluctuations here are abnormal. Let me analyze the Echo resonance.",
-];
 
 export const App: React.FC = () => {
   const configService = ConfigService.getInstance();
@@ -41,13 +33,31 @@ export const App: React.FC = () => {
   const [settings, setSettings] = useState<AppSettings>(configService.getSettings());
   const [currentTab, setCurrentTab] = useState<NavTab>('dashboard');
   const [isCapturing, setIsCapturing] = useState(false);
+  const [captureStatus, setCaptureStatus] = useState<'active' | 'paused' | 'standby'>('standby');
   const [overlayVisible, setOverlayVisible] = useState(true);
 
   const [latestTranslation, setLatestTranslation] = useState<TranslationResult | null>(null);
   const [latestOCR, setLatestOCR] = useState<OCRResult | null>(null);
-  const [latestBoxes, setLatestBoxes] = useState<BoundingBox[]>([]);
   const [gameWindow, setGameWindow] = useState<GameWindowInfo | null>(null);
+  const [candidateWindows, setCandidateWindows] = useState<CandidateWindow[]>([]);
+  const [selectedWindow, setSelectedWindow] = useState<CandidateWindow | null>(null);
   const [cacheStats, setCacheStats] = useState(cacheService.getStats());
+  const [systemMetrics, setSystemMetrics] = useState({ cpuUsagePercent: 1.4, ramUsageMb: 48, totalFrames: 0 });
+
+  // Initial candidate windows scan
+  const refreshWindows = async () => {
+    const data = await bridge.getWindows();
+    if (data && data.windows) {
+      setCandidateWindows(data.windows);
+      if (data.selectedWindow) {
+        setSelectedWindow(data.selectedWindow);
+      }
+    }
+  };
+
+  useEffect(() => {
+    refreshWindows();
+  }, []);
 
   // Live polling of Native Backend Engine
   useEffect(() => {
@@ -57,12 +67,28 @@ export const App: React.FC = () => {
       if (!mounted || !bState) return;
 
       setIsCapturing(bState.isCapturing);
+      setCaptureStatus(bState.captureStatus || (bState.isCapturing ? 'active' : 'standby'));
 
-      if (bState.gameDetected) {
+      if (bState.selectedWindow) {
+        setSelectedWindow(bState.selectedWindow);
         setGameWindow({
-          title: bState.gameWindowTitle || 'Wuthering Waves',
+          title: bState.selectedWindow.title || bState.selectedWindow.processName,
+          handle: bState.selectedWindow.handle,
+          processId: bState.selectedWindow.pid,
+          bounds: { 
+            x: bState.selectedWindow.clientScreenX || 0, 
+            y: bState.selectedWindow.clientScreenY || 0, 
+            width: bState.selectedWindow.clientWidth || 1920, 
+            height: bState.selectedWindow.clientHeight || 1080 
+          },
+          dpiScale: 1.0,
+          isBorderless: true,
+        });
+      } else if (bState.gameDetected) {
+        setGameWindow({
+          title: 'Wuthering Waves (Active)',
           handle: 0x12040,
-          processId: bState.gameProcessId || 0,
+          processId: 22800,
           bounds: { x: 0, y: 0, width: 1920, height: 1080 },
           dpiScale: 1.0,
           isBorderless: true,
@@ -71,13 +97,15 @@ export const App: React.FC = () => {
         setGameWindow(null);
       }
 
-      if (bState.latestOCR && bState.latestOCR.fullText) {
+      if (bState.latestOCR) {
         setLatestOCR({
-          fullText: bState.latestOCR.fullText,
+          fullText: bState.latestOCR.fullText || '',
           lines: bState.latestOCR.lines || [],
+          blocks: bState.latestOCR.blocks || [],
           confidence: 0.98,
           timestamp: Date.now(),
           changed: true,
+          warmOcrLatencyMs: bState.latestOCR.warmOcrLatencyMs || 18
         });
       }
 
@@ -85,6 +113,7 @@ export const App: React.FC = () => {
         setLatestTranslation({
           originalText: bState.latestTranslation.originalText,
           translatedText: bState.latestTranslation.translatedText,
+          blocks: bState.latestTranslation.blocks || [],
           engineUsed: bState.latestTranslation.engineUsed as any || 'online',
           latencyMs: bState.latestTranslation.latencyMs || 60,
           cached: false,
@@ -92,8 +121,16 @@ export const App: React.FC = () => {
         });
       }
 
+      if (bState.stats) {
+        setSystemMetrics({
+          cpuUsagePercent: bState.stats.cpuUsagePercent || 1.4,
+          ramUsageMb: bState.stats.ramUsageMb || 48,
+          totalFrames: bState.stats.totalFramesProcessed || 0
+        });
+      }
+
       setCacheStats(cacheService.getStats());
-    }, 800);
+    }, 600);
 
     return () => {
       mounted = false;
@@ -105,22 +142,32 @@ export const App: React.FC = () => {
     if (isCapturing) {
       await bridge.pauseTranslation();
       setIsCapturing(false);
+      setCaptureStatus('paused');
     } else {
       await bridge.startTranslation();
       setIsCapturing(true);
+      setCaptureStatus('active');
     }
   };
 
   const handleStopCapture = async () => {
     await bridge.stopTranslation();
     setIsCapturing(false);
+    setCaptureStatus('standby');
+  };
+
+  const handleSelectWindow = async (handle: number) => {
+    const ok = await bridge.selectWindow(handle);
+    if (ok) {
+      const match = candidateWindows.find(w => w.handle === handle);
+      if (match) setSelectedWindow(match);
+    }
   };
 
   const handleUpdateSettings = (partial: Partial<AppSettings>) => {
     const updated = configService.updateSettings(partial);
     setSettings(updated);
 
-    // Relay active region to native backend
     const activePreset = WUTHERING_WAVES_PRESETS.find(p => p.id === updated.selectedRegionId) || WUTHERING_WAVES_PRESETS[0];
     const pixelBounds = {
       x: Math.round(activePreset.xRatio * 1920),
@@ -128,9 +175,13 @@ export const App: React.FC = () => {
       width: Math.round(activePreset.wRatio * 1920),
       height: Math.round(activePreset.hRatio * 1080),
     };
+
     bridge.updateSettings({
       activeRegion: pixelBounds,
       pollingSpeedMs: updated.pollingIntervalMs,
+      captureMode: updated.captureMode || 'full',
+      displayMode: updated.translationMode || 'replacement',
+      performancePreset: updated.pollingSpeed || 'balanced',
     });
   };
 
@@ -139,14 +190,11 @@ export const App: React.FC = () => {
     setSettings(reset);
   };
 
-  let testIdx = 0;
   const runTestDialogue = async () => {
-    const text = WW_SAMPLE_DIALOGUES[testIdx % WW_SAMPLE_DIALOGUES.length];
-    testIdx++;
-    await bridge.triggerTestFrame(text);
+    await bridge.triggerTestFrame();
   };
 
-  // Global In-Game Hotkey Listeners
+  // Global Hotkey Listeners
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.altKey && (e.key === 't' || e.key === 'T')) {
@@ -157,17 +205,11 @@ export const App: React.FC = () => {
         e.preventDefault();
         setOverlayVisible((prev) => !prev);
       }
-      if (e.ctrlKey && e.altKey && (e.key === 'r' || e.key === 'R')) {
-        e.preventDefault();
-        const currentIndex = WUTHERING_WAVES_PRESETS.findIndex((p) => p.id === settings.selectedRegionId);
-        const nextPreset = WUTHERING_WAVES_PRESETS[(currentIndex + 1) % WUTHERING_WAVES_PRESETS.length];
-        handleUpdateSettings({ selectedRegionId: nextPreset.id });
-      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [settings.selectedRegionId, isCapturing]);
+  }, [isCapturing]);
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background text-textMain selection:bg-accent selection:text-background font-sans">
@@ -192,13 +234,19 @@ export const App: React.FC = () => {
           {currentTab === 'dashboard' && (
             <Dashboard
               isCapturing={isCapturing}
+              captureStatus={captureStatus}
               onToggleCapture={handleToggleCapture}
               settings={settings}
               onUpdateSettings={handleUpdateSettings}
               latestTranslation={latestTranslation}
               latestOCR={latestOCR}
               gameWindow={gameWindow}
+              candidateWindows={candidateWindows}
+              selectedWindow={selectedWindow}
+              onSelectWindow={handleSelectWindow}
+              onRefreshWindows={refreshWindows}
               cacheStats={cacheStats}
+              systemMetrics={systemMetrics}
               onRunTestTranslation={runTestDialogue}
             />
           )}
@@ -208,7 +256,10 @@ export const App: React.FC = () => {
               settings={settings}
               onUpdateSettings={handleUpdateSettings}
               gameWindow={gameWindow}
-              onRefreshWindow={() => {}}
+              candidateWindows={candidateWindows}
+              selectedWindow={selectedWindow}
+              onSelectWindow={handleSelectWindow}
+              onRefreshWindow={refreshWindows}
             />
           )}
 
@@ -250,7 +301,7 @@ export const App: React.FC = () => {
         </main>
       </div>
 
-      {/* Render local in-app preview overlay */}
+      {/* Render in-app preview overlay */}
       {settings.translationMode === 'subtitle' ? (
         <SubtitleOverlay
           translation={latestTranslation}
@@ -260,7 +311,7 @@ export const App: React.FC = () => {
       ) : (
         <TextReplacementOverlay
           translation={latestTranslation}
-          boxes={latestBoxes}
+          blocks={latestTranslation?.blocks || latestOCR?.blocks || []}
           settings={settings.overlay}
           visible={overlayVisible && isCapturing}
         />

@@ -1,5 +1,7 @@
 export type TranslationMode = 'subtitle' | 'replacement';
 
+export type CaptureMode = 'full' | 'custom' | 'dialogue';
+
 export type TranslationEngineType = 'online' | 'offline' | 'hybrid';
 
 export type OnlineProvider = 'google' | 'deepl' | 'libretranslate' | 'openai';
@@ -24,23 +26,51 @@ export interface OCRLine {
   words: OCRWord[];
 }
 
+export interface TextBlock {
+  id: string;
+  text: string;
+  translatedText?: string;
+  box: BoundingBox;
+  category: 'dialogue' | 'quest' | 'item_tooltip' | 'status_currency' | 'interaction_prompt' | 'ui_element';
+  lines: string[];
+  lineCount: number;
+}
+
 export interface OCRResult {
   fullText: string;
   lines: OCRLine[];
+  blocks?: TextBlock[];
   confidence: number;
   timestamp: number;
   changed: boolean;
+  warmOcrLatencyMs?: number;
 }
 
 export interface TranslationResult {
   originalText: string;
   translatedText: string;
+  blocks?: TextBlock[];
   engineUsed: TranslationEngineType;
   providerUsed?: OnlineProvider;
   latencyMs: number;
   cached: boolean;
   timestamp: number;
   boxes?: BoundingBox[];
+}
+
+export interface CandidateWindow {
+  handle: number;
+  pid: number;
+  processName: string;
+  title: string;
+  className?: string;
+  width: number;
+  height: number;
+  clientWidth: number;
+  clientHeight: number;
+  clientScreenX?: number;
+  clientScreenY?: number;
+  isGameCandidate?: boolean;
 }
 
 export interface CaptureRegion {
@@ -93,6 +123,7 @@ export interface AppSettings {
   targetLanguage: string;
   sourceLanguage: string;
   translationMode: TranslationMode;
+  captureMode: CaptureMode;
   engineType: TranslationEngineType;
   onlineProvider: OnlineProvider;
   pollingSpeed: PollingSpeed;

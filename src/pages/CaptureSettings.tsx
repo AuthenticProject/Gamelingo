@@ -5,17 +5,20 @@ import {
   Layers, 
   RefreshCw, 
   CheckCircle2, 
-  Sliders, 
   Info,
-  Maximize2
+  Maximize2,
+  ChevronDown
 } from 'lucide-react';
-import { AppSettings, GameWindowInfo, CaptureRegion } from '../types';
+import { AppSettings, GameWindowInfo, CaptureRegion, CandidateWindow, CaptureMode } from '../types';
 import { WUTHERING_WAVES_PRESETS } from '../services/configService';
 
 interface CaptureSettingsProps {
   settings: AppSettings;
   onUpdateSettings: (partial: Partial<AppSettings>) => void;
   gameWindow: GameWindowInfo | null;
+  candidateWindows?: CandidateWindow[];
+  selectedWindow?: CandidateWindow | null;
+  onSelectWindow?: (handle: number) => void;
   onRefreshWindow: () => void;
 }
 
@@ -23,9 +26,13 @@ export const CaptureSettings: React.FC<CaptureSettingsProps> = ({
   settings,
   onUpdateSettings,
   gameWindow,
+  candidateWindows = [],
+  selectedWindow,
+  onSelectWindow,
   onRefreshWindow,
 }) => {
   const [selectedPresetId, setSelectedPresetId] = useState(settings.selectedRegionId);
+  const [showDropdown, setShowDropdown] = useState(false);
 
   const activePreset = WUTHERING_WAVES_PRESETS.find(
     (p) => p.id === selectedPresetId
@@ -35,6 +42,8 @@ export const CaptureSettings: React.FC<CaptureSettingsProps> = ({
     setSelectedPresetId(preset.id);
     onUpdateSettings({ selectedRegionId: preset.id });
   };
+
+  const currentCaptureMode: CaptureMode = settings.captureMode || 'full';
 
   return (
     <div className="p-6 space-y-6 overflow-y-auto max-h-[calc(100vh-4rem)]">
@@ -46,7 +55,7 @@ export const CaptureSettings: React.FC<CaptureSettingsProps> = ({
             <span>Screen Capture & Window Targeting</span>
           </h2>
           <p className="text-xs text-textMuted mt-0.5">
-            Configure target game window detection and selective dialogue region cropping.
+            Configure full game client capture, window selection fallback, and region cropping.
           </p>
         </div>
         <button
@@ -58,41 +67,127 @@ export const CaptureSettings: React.FC<CaptureSettingsProps> = ({
         </button>
       </div>
 
+      {/* Capture Mode Selector */}
+      <div className="cyber-card p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Maximize2 className="w-4 h-4 text-accent" />
+            <span className="text-xs font-bold text-textMain uppercase tracking-wider">
+              Capture Mode
+            </span>
+          </div>
+          <span className="text-xs text-accent font-semibold uppercase">{currentCaptureMode}</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <button
+            onClick={() => onUpdateSettings({ captureMode: 'full', selectedRegionId: 'ww-full-window' })}
+            className={`p-3 rounded-lg border text-left transition-all ${
+              currentCaptureMode === 'full'
+                ? 'bg-accent/15 border-accent shadow-glow-accent'
+                : 'bg-surface border-surfaceBorder hover:border-textSubtle'
+            }`}
+          >
+            <div className="text-xs font-bold text-textMain mb-1">Full Game Translation</div>
+            <div className="text-[11px] text-textMuted">Default universal capture mode across entire client.</div>
+          </button>
+
+          <button
+            onClick={() => onUpdateSettings({ captureMode: 'custom' })}
+            className={`p-3 rounded-lg border text-left transition-all ${
+              currentCaptureMode === 'custom'
+                ? 'bg-accent/15 border-accent shadow-glow-accent'
+                : 'bg-surface border-surfaceBorder hover:border-textSubtle'
+            }`}
+          >
+            <div className="text-xs font-bold text-textMain mb-1">Selected Region</div>
+            <div className="text-[11px] text-textMuted">Custom sub-coordinates for specific menus.</div>
+          </button>
+
+          <button
+            onClick={() => onUpdateSettings({ captureMode: 'dialogue', selectedRegionId: 'ww-dialogue-bottom' })}
+            className={`p-3 rounded-lg border text-left transition-all ${
+              currentCaptureMode === 'dialogue'
+                ? 'bg-accent/15 border-accent shadow-glow-accent'
+                : 'bg-surface border-surfaceBorder hover:border-textSubtle'
+            }`}
+          >
+            <div className="text-xs font-bold text-textMain mb-1">Dialogue Only</div>
+            <div className="text-[11px] text-textMuted">Legacy mode for bottom subtitles only.</div>
+          </button>
+        </div>
+      </div>
+
       {/* Target Game Window Card */}
       <div className="glass-panel p-5 rounded-xl border border-surfaceBorder space-y-4">
         <div className="flex items-center justify-between border-b border-surfaceBorder pb-3">
           <div className="flex items-center gap-2.5">
             <Monitor className="w-5 h-5 text-accent" />
             <div>
-              <div className="text-sm font-semibold text-textMain">Detected Game Window</div>
-              <div className="text-[11px] text-textMuted">Windows Graphics Capture Target</div>
+              <div className="text-sm font-semibold text-textMain">Target Window</div>
+              <div className="text-[11px] text-textMuted">Win32 Desktop Duplication / PrintWindow API</div>
             </div>
           </div>
-          <span className="text-xs text-success bg-success/15 px-2 py-0.5 rounded border border-success/30 flex items-center gap-1">
-            <CheckCircle2 className="w-3 h-3" />
-            <span>Active Target</span>
-          </span>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowDropdown(!showDropdown)}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium text-textMain bg-surface border border-surfaceBorder hover:border-accent/40 flex items-center gap-1.5 transition-all"
+            >
+              <span>Switch Window</span>
+              <ChevronDown className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
+
+        {showDropdown && (
+          <div className="p-3 bg-background/90 rounded-lg border border-surfaceBorder space-y-2">
+            <div className="text-[11px] font-semibold text-textMuted uppercase tracking-wider">
+              Select Running Window:
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto">
+              {candidateWindows.map((win) => (
+                <button
+                  key={win.handle}
+                  onClick={() => {
+                    if (onSelectWindow) onSelectWindow(win.handle);
+                    setShowDropdown(false);
+                  }}
+                  className={`p-2 rounded text-left text-xs border transition-all ${
+                    selectedWindow?.handle === win.handle
+                      ? 'bg-accent/20 border-accent text-accent'
+                      : 'bg-surface border-surfaceBorder text-textMain hover:border-accent/40'
+                  }`}
+                >
+                  <div className="font-semibold truncate">{win.title || win.processName}</div>
+                  <div className="text-[10px] text-textMuted">
+                    PID: {win.pid} | {win.clientWidth}x{win.clientHeight}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           <div className="bg-background/80 p-3 rounded-lg border border-surfaceBorder">
             <div className="text-[11px] text-textSubtle uppercase">Process / Window</div>
             <div className="text-xs font-bold text-textMain mt-1 truncate">
-              {gameWindow ? gameWindow.title : 'Client-Win64-Shipping.exe'}
+              {selectedWindow ? selectedWindow.title : (gameWindow ? gameWindow.title : 'Wuthering Waves')}
             </div>
           </div>
 
           <div className="bg-background/80 p-3 rounded-lg border border-surfaceBorder">
             <div className="text-[11px] text-textSubtle uppercase">Resolution</div>
             <div className="text-xs font-bold text-textMain mt-1">
-              {gameWindow ? `${gameWindow.bounds.width} x ${gameWindow.bounds.height}` : '1920 x 1080'}
+              {selectedWindow ? `${selectedWindow.clientWidth} x ${selectedWindow.clientHeight}` : (gameWindow ? `${gameWindow.bounds.width} x ${gameWindow.bounds.height}` : '1920 x 1080')}
             </div>
           </div>
 
           <div className="bg-background/80 p-3 rounded-lg border border-surfaceBorder">
-            <div className="text-[11px] text-textSubtle uppercase">Display Mode</div>
+            <div className="text-[11px] text-textSubtle uppercase">Process ID</div>
             <div className="text-xs font-bold text-accent mt-1">
-              {gameWindow?.isBorderless ? 'Borderless Windowed' : 'Windowed'}
+              {selectedWindow ? selectedWindow.pid : (gameWindow ? gameWindow.processId : 'Auto')}
             </div>
           </div>
 
@@ -107,7 +202,7 @@ export const CaptureSettings: React.FC<CaptureSettingsProps> = ({
         <div className="text-[11px] text-textMuted bg-surface/50 p-3 rounded-lg border border-surfaceBorder flex items-start gap-2">
           <Info className="w-4 h-4 text-accent shrink-0 mt-0.5" />
           <span>
-            Wuthering Waves must be running in <strong>Borderless Windowed</strong> or <strong>Windowed</strong> mode for the transparent overlay to render smoothly over gameplay.
+            GameLingo uses external non-invasive Windows capture. Borderless Windowed mode provides the optimal experience.
           </span>
         </div>
       </div>
@@ -118,10 +213,10 @@ export const CaptureSettings: React.FC<CaptureSettingsProps> = ({
           <div>
             <h3 className="text-sm font-semibold text-textMain flex items-center gap-2">
               <Layers className="w-4 h-4 text-accent" />
-              <span>Capture Region Visualizer (Wuthering Waves 16:9 Frame)</span>
+              <span>Capture Region Visualizer (Wuthering Waves Frame)</span>
             </h3>
             <p className="text-[11px] text-textMuted mt-0.5">
-              Only the highlighted box will be cropped and passed to Windows OCR, saving APU resources.
+              Visual preview of active capture boundaries.
             </p>
           </div>
           <span className="text-xs text-accent font-mono bg-accent/10 px-2 py-0.5 rounded border border-accent/20">
@@ -138,7 +233,7 @@ export const CaptureSettings: React.FC<CaptureSettingsProps> = ({
               <span>Jinzhou Outskirts</span>
             </div>
             <div className="text-center text-[10px] text-textSubtle font-mono">
-              [Simulated Wuthering Waves 1080p Screen]
+              [Full 1080p Screen Capture Zone]
             </div>
             <div className="flex justify-between items-center text-[10px] text-textMuted font-mono">
               <span>Rover Level 80</span>
@@ -160,7 +255,7 @@ export const CaptureSettings: React.FC<CaptureSettingsProps> = ({
               {activePreset.name}
             </div>
             <div className="text-[9px] text-textMuted font-mono">
-              Crop: {Math.round(activePreset.wRatio * 1920)} x {Math.round(activePreset.hRatio * 1080)} px
+              Bounds: {Math.round(activePreset.wRatio * 1920)} x {Math.round(activePreset.hRatio * 1080)} px
             </div>
           </div>
         </div>
@@ -169,7 +264,7 @@ export const CaptureSettings: React.FC<CaptureSettingsProps> = ({
       {/* Preset List */}
       <div className="space-y-3">
         <h3 className="text-xs font-semibold text-textSubtle uppercase tracking-wider">
-          Available Wuthering Waves Dialogue Presets
+          Available Presets & Region Overrides
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {WUTHERING_WAVES_PRESETS.map((preset) => {
@@ -193,9 +288,6 @@ export const CaptureSettings: React.FC<CaptureSettingsProps> = ({
                   )}
                 </div>
                 <p className="text-[11px] text-textMuted">{preset.description}</p>
-                <div className="text-[10px] text-textSubtle font-mono mt-2">
-                  Bounds: x={Math.round(preset.xRatio * 100)}%, y={Math.round(preset.yRatio * 100)}%, w={Math.round(preset.wRatio * 100)}%, h={Math.round(preset.hRatio * 100)}%
-                </div>
               </div>
             );
           })}

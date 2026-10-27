@@ -48,5 +48,17 @@
   - Adaptive polling benchmark (Performance 1000ms, Balanced 500ms, Responsive 250ms).
 - [x] **Phase 10: Packaging & Production Build**
   - Production build generation verified (`tsc && vite build`).
-  - Dist build size: ~352 kB total footprint.
+  - Dist build size: ~367 kB total footprint.
   - Clean install verification and complete test suites passed.
+- [x] **Phase 11: Universal Full-Game Translation Upgrade**
+  - Win32 Window Detection Fixed: Implemented `OpenInputDesktop` + `EnumDesktopWindows` / `EnumWindows` Win32 API suite to detect Wuthering Waves (`Client-Win64-Shipping` / `Wuthering Waves`) even when `Process.MainWindowHandle` is 0 or detached.
+  - Manual Window Selection Fallback: Added `/api/windows` and `/api/select-window` endpoints + UI selector dropdown, enabling translation to proceed on any selected window.
+  - Full-Game Client Capture: Implemented client coordinate capture (`GetClientRect` + `ClientToScreen`) supporting different resolutions, multi-monitor setups, and DPI scaling.
+  - Capture Modes: Implemented `Full Game Translation` (default), `Selected Region`, and `Dialogue Only` (legacy).
+  - Intelligent Multi-Region OCR: Built line and word bounding box clustering into independent logical text blocks (dialogue, quests, menus, echo tooltips, status currency, interaction prompts).
+  - Multi-Block Visual Replacement: Upgraded WPF transparent click-through overlay (`native/desktop_overlay.ps1`) and Web preview to render multi-block dark semi-opaque backdrop cards with auto-wrapped Indonesian text directly over original English text coordinates.
+  - Adaptive Performance Optimization: Added perceptual hash frame change detection, skipping OCR when frames are static and adapting polling frequency (Performance, Balanced, Responsive).
+  - Batch Translation & Glossary: Preserved 22+ Wuthering Waves proper nouns, translating multi-block frames in parallel/batch.
+  - Live Diagnostics: Added live captured game frame preview (`/api/preview-frame`), interactive OCR bounding box toggle, and text block inspector table.
+  - Verification: Complete 5-stage automated pipeline verification passed (`native/test_full_pipeline_live.js`).
+
