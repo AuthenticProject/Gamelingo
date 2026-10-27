@@ -6,16 +6,17 @@ import {
   Clock, 
   Cpu, 
   Database, 
-  Sliders, 
   Eye, 
-  Sparkles, 
   RefreshCw, 
   AlertCircle,
   Monitor,
   Layers,
   ChevronDown,
   Activity,
-  Maximize2
+  Maximize2,
+  Crosshair,
+  Tv,
+  AlertTriangle
 } from 'lucide-react';
 import { 
   TranslationResult, 
@@ -23,7 +24,11 @@ import {
   OCRResult, 
   GameWindowInfo,
   CandidateWindow,
-  CaptureMode
+  CaptureMode,
+  CaptureSource,
+  MonitorInfo,
+  WindowEnumerationStatus,
+  CaptureSuccessStatus
 } from '../types';
 import { WUTHERING_WAVES_PRESETS } from '../services/configService';
 
@@ -36,10 +41,22 @@ interface DashboardProps {
   latestTranslation: TranslationResult | null;
   latestOCR: OCRResult | null;
   gameWindow: GameWindowInfo | null;
+
+  captureSource?: CaptureSource;
+  onSelectSource?: (source: CaptureSource, handle?: number, monitorIndex?: number) => void;
+  onPickForeground?: () => void;
+  countdownSeconds?: number;
+  monitors?: MonitorInfo[];
+  selectedMonitorIndex?: number;
+
   candidateWindows?: CandidateWindow[];
   selectedWindow?: CandidateWindow | null;
   onSelectWindow?: (handle: number) => void;
   onRefreshWindows?: () => void;
+
+  windowEnumerationStatus?: WindowEnumerationStatus;
+  captureSuccessStatus?: CaptureSuccessStatus;
+
   cacheStats: { totalEntries: number; estimatedSizeKb: number };
   systemMetrics?: { cpuUsagePercent: number; ramUsageMb: number; totalFrames: number };
   onRunTestTranslation: () => void;
@@ -54,10 +71,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
   latestTranslation,
   latestOCR,
   gameWindow,
+  captureSource = 'window',
+  onSelectSource,
+  onPickForeground,
+  countdownSeconds = 0,
+  monitors = [],
+  selectedMonitorIndex = 0,
   candidateWindows = [],
   selectedWindow,
   onSelectWindow,
   onRefreshWindows,
+  windowEnumerationStatus = { success: true, count: 0, error: null, lastUpdated: 0 },
+  captureSuccessStatus = { success: false, error: null, width: 0, height: 0, timestamp: 0 },
   cacheStats,
   systemMetrics = { cpuUsagePercent: 1.4, ramUsageMb: 48, totalFrames: 0 },
   onRunTestTranslation,
@@ -135,6 +160,224 @@ export const Dashboard: React.FC<DashboardProps> = ({
         <div className="absolute -top-12 -right-12 w-48 h-48 bg-accent/10 rounded-full blur-3xl pointer-events-none" />
       </div>
 
+      {/* Target Capture Source & Foreground Window Picker (Requirement 2, 3 & 4) */}
+      <div className="cyber-card p-4 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-surfaceBorder pb-3">
+          <div className="flex items-center gap-2">
+            <Monitor className="w-4 h-4 text-accent" />
+            <span className="text-xs font-bold text-textMain uppercase tracking-wider">
+              Capture Source Selection
+            </span>
+          </div>
+
+          {/* Source Toggle: Game Window vs Screen/Monitor */}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onSelectSource && onSelectSource('window')}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all border ${
+                captureSource === 'window'
+                  ? 'bg-accent/20 border-accent text-accent'
+                  : 'bg-surface border-surfaceBorder text-textMuted hover:text-textMain'
+              }`}
+            >
+              <Monitor className="w-3.5 h-3.5" />
+              <span>Target Window (Default)</span>
+            </button>
+
+            <button
+              onClick={() => onSelectSource && onSelectSource('screen', undefined, 0)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all border ${
+                captureSource === 'screen'
+                  ? 'bg-accent/20 border-accent text-accent'
+                  : 'bg-surface border-surfaceBorder text-textMuted hover:text-textMain'
+              }`}
+            >
+              <Tv className="w-3.5 h-3.5" />
+              <span>Capture Screen / Monitor (Fallback)</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Source Body */}
+        {captureSource === 'window' ? (
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-3 rounded-lg bg-surface border border-surfaceBorder text-accent">
+                <Monitor className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-textMuted">
+                    Selected Window
+                  </span>
+                  {selectedWindow ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-success bg-success/15 px-2 py-0.5 rounded-full border border-success/30">
+                      <CheckCircle2 className="w-3 h-3" />
+                      Locked
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-warning bg-warning/15 px-2 py-0.5 rounded-full border border-warning/30">
+                      <AlertCircle className="w-3 h-3" />
+                      No Target Selected
+                    </span>
+                  )}
+                </div>
+                <div className="text-sm font-bold text-textMain mt-0.5">
+                  {selectedWindow ? (
+                    <span>{selectedWindow.title || selectedWindow.processName}</span>
+                  ) : (
+                    <span className="text-textSubtle">Pick foreground window or select from list</span>
+                  )}
+                </div>
+                <div className="text-[11px] text-textMuted flex items-center gap-2 mt-0.5">
+                  {selectedWindow && (
+                    <>
+                      <span>PID: {selectedWindow.pid}</span>
+                      <span>•</span>
+                      <span>Client: {selectedWindow.clientWidth}x{selectedWindow.clientHeight}</span>
+                      <span>•</span>
+                      <span>Handle: 0x{selectedWindow.handle.toString(16)}</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Actions: Pick Foreground Window & Dropdown */}
+            <div className="flex items-center gap-2 relative">
+              <button
+                onClick={onPickForeground}
+                disabled={countdownSeconds > 0}
+                className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 transition-all shadow ${
+                  countdownSeconds > 0
+                    ? 'bg-warning text-background animate-pulse'
+                    : 'bg-accent/20 border border-accent text-accent hover:bg-accent/30'
+                }`}
+                title="Click and switch to Wuthering Waves within countdown"
+              >
+                <Crosshair className="w-4 h-4" />
+                <span>
+                  {countdownSeconds > 0
+                    ? `Switch to Game in ${countdownSeconds}s...`
+                    : 'Pick Foreground Window (3s)'}
+                </span>
+              </button>
+
+              <button
+                onClick={() => {
+                  if (!showWindowDropdown && onRefreshWindows) onRefreshWindows();
+                  setShowWindowDropdown(!showWindowDropdown);
+                }}
+                className="px-3.5 py-2 rounded-lg text-xs font-medium text-textMain bg-surface border border-surfaceBorder hover:border-accent/40 flex items-center gap-1.5 transition-all"
+              >
+                <span>Select Window</span>
+                <ChevronDown className={`w-3.5 h-3.5 text-accent transition-transform ${showWindowDropdown ? 'rotate-180' : ''}`} />
+              </button>
+
+              {/* Window Dropdown */}
+              {showWindowDropdown && (
+                <div className="absolute right-0 top-full mt-2 w-96 max-h-80 overflow-y-auto glass-panel p-2 rounded-xl border border-surfaceBorder shadow-2xl z-50">
+                  <div className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-textMuted flex justify-between items-center border-b border-surfaceBorder/60 mb-1">
+                    <span>Running Windows ({candidateWindows.length})</span>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (onRefreshWindows) onRefreshWindows();
+                      }}
+                      className="hover:text-accent flex items-center gap-1"
+                    >
+                      <RefreshCw className="w-2.5 h-2.5" />
+                      <span>Refresh</span>
+                    </button>
+                  </div>
+
+                  {windowEnumerationStatus && !windowEnumerationStatus.success && windowEnumerationStatus.error ? (
+                    <div className="p-3 text-xs bg-error/10 border border-error/30 rounded-lg text-error flex items-start gap-2 m-1">
+                      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <div>
+                        <div className="font-bold">Enumeration Error:</div>
+                        <div className="text-[11px] opacity-90 break-all">{windowEnumerationStatus.error}</div>
+                      </div>
+                    </div>
+                  ) : candidateWindows.length === 0 ? (
+                    <div className="p-4 text-xs text-textMuted text-center space-y-1">
+                      <div>No visible windows detected.</div>
+                      <div className="text-[10px] text-textSubtle">
+                        Use "Pick Foreground Window (3s)" or "Capture Screen / Monitor" above.
+                      </div>
+                    </div>
+                  ) : (
+                    candidateWindows.map((win) => (
+                      <button
+                        key={win.handle}
+                        onClick={() => {
+                          if (onSelectWindow) onSelectWindow(win.handle);
+                          setShowWindowDropdown(false);
+                        }}
+                        className={`w-full text-left p-2 rounded-lg text-xs transition-all flex flex-col mb-1 ${
+                          selectedWindow?.handle === win.handle
+                            ? 'bg-accent/20 text-accent font-semibold'
+                            : 'hover:bg-surface text-textMain'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="truncate font-medium">{win.title || win.processName}</span>
+                          {win.isGameCandidate && (
+                            <span className="text-[9px] px-1.5 py-0.2 rounded bg-accent/20 text-accent font-mono">
+                              GAME
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-[10px] text-textMuted">
+                          PID: {win.pid} | {win.clientWidth}x{win.clientHeight} ({win.processName})
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          /* Screen / Monitor Fallback Selector */
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-3 bg-surface/50 rounded-lg border border-surfaceBorder">
+            <div className="flex items-center gap-3">
+              <Tv className="w-5 h-5 text-accent" />
+              <div>
+                <div className="text-xs font-bold uppercase tracking-wider text-textMain">
+                  Direct Screen / Monitor Capture
+                </div>
+                <div className="text-[11px] text-textMuted">
+                  Captures entire monitor viewport without depending on window handles.
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-textMuted font-medium">Select Display:</span>
+              <select
+                value={selectedMonitorIndex}
+                onChange={(e) => onSelectSource && onSelectSource('screen', undefined, Number(e.target.value))}
+                className="bg-background border border-surfaceBorder rounded-lg px-3 py-1.5 text-xs text-textMain font-mono focus:border-accent outline-none"
+              >
+                {monitors.map((m) => {
+                  const mIndex = m.index ?? m.Index ?? 0;
+                  const mName = m.name || m.Name || `Display ${mIndex + 1}`;
+                  const mW = m.width || m.Width || 1920;
+                  const mH = m.height || m.Height || 1080;
+                  const mPrimary = m.isPrimary ?? m.IsPrimary ?? false;
+                  return (
+                    <option key={mIndex} value={mIndex}>
+                      {mName} ({mW}x{mH}){mPrimary ? ' - Primary' : ''}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Capture Mode Selector (Requirement 2 & 9) */}
       <div className="cyber-card p-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
@@ -150,7 +393,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          {/* Mode 1: Full Game Translation (DEFAULT) */}
           <button
             onClick={() => onUpdateSettings({ captureMode: 'full', selectedRegionId: 'ww-full-window' })}
             className={`p-3.5 rounded-lg border text-left transition-all relative ${
@@ -170,7 +412,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </p>
           </button>
 
-          {/* Mode 2: Selected Region */}
           <button
             onClick={() => onUpdateSettings({ captureMode: 'custom' })}
             className={`p-3.5 rounded-lg border text-left transition-all ${
@@ -190,7 +431,6 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </p>
           </button>
 
-          {/* Mode 3: Dialogue Only (Legacy) */}
           <button
             onClick={() => onUpdateSettings({ captureMode: 'dialogue', selectedRegionId: 'ww-dialogue-bottom' })}
             className={`p-3.5 rounded-lg border text-left transition-all ${
@@ -212,175 +452,113 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      {/* Target Game Window Selector & Honest Pipeline Status (Requirement 1) */}
-      <div className="cyber-card p-4 relative">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-lg bg-surface border border-surfaceBorder text-accent">
-              <Monitor className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold uppercase tracking-wider text-textMuted">
-                  Target Game Window
-                </span>
-                {selectedWindow ? (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-success bg-success/15 px-2 py-0.5 rounded-full border border-success/30">
-                    <CheckCircle2 className="w-3 h-3" />
-                    Connected
-                  </span>
-                ) : (
-                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-warning bg-warning/15 px-2 py-0.5 rounded-full border border-warning/30">
-                    <AlertCircle className="w-3 h-3" />
-                    Standby
-                  </span>
-                )}
-              </div>
-              <div className="text-sm font-bold text-textMain mt-0.5">
-                {selectedWindow ? (
-                  <span>{selectedWindow.title || selectedWindow.processName}</span>
-                ) : (
-                  <span className="text-textSubtle">No window selected (Click manual selector to choose)</span>
-                )}
-              </div>
-              <div className="text-[11px] text-textMuted flex items-center gap-2 mt-0.5">
-                {selectedWindow && (
-                  <>
-                    <span>PID: {selectedWindow.pid}</span>
-                    <span>•</span>
-                    <span>Res: {selectedWindow.clientWidth}x{selectedWindow.clientHeight}</span>
-                    <span>•</span>
-                    <span>Proc: {selectedWindow.processName}</span>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Window Selection Dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => {
-                if (!showWindowDropdown && onRefreshWindows) onRefreshWindows();
-                setShowWindowDropdown(!showWindowDropdown);
-              }}
-              className="px-3.5 py-2 rounded-lg text-xs font-medium text-textMain bg-surface border border-surfaceBorder hover:border-accent/40 flex items-center gap-2 transition-all"
-            >
-              <span>Select Window (Fallback)</span>
-              <ChevronDown className={`w-3.5 h-3.5 text-accent transition-transform ${showWindowDropdown ? 'rotate-180' : ''}`} />
-            </button>
-
-            {showWindowDropdown && (
-              <div className="absolute right-0 top-full mt-2 w-80 max-h-72 overflow-y-auto glass-panel p-2 rounded-xl border border-surfaceBorder shadow-2xl z-50">
-                <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-textMuted flex justify-between items-center border-b border-surfaceBorder/60 mb-1">
-                  <span>Running Desktop Windows</span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (onRefreshWindows) onRefreshWindows();
-                    }}
-                    className="hover:text-accent flex items-center gap-1"
-                  >
-                    <RefreshCw className="w-2.5 h-2.5" />
-                    <span>Refresh</span>
-                  </button>
-                </div>
-                {candidateWindows.length === 0 ? (
-                  <div className="p-3 text-xs text-textMuted text-center">No visible windows found</div>
-                ) : (
-                  candidateWindows.map((win) => (
-                    <button
-                      key={win.handle}
-                      onClick={() => {
-                        if (onSelectWindow) onSelectWindow(win.handle);
-                        setShowWindowDropdown(false);
-                      }}
-                      className={`w-full text-left p-2 rounded-lg text-xs transition-all flex flex-col ${
-                        selectedWindow?.handle === win.handle
-                          ? 'bg-accent/20 text-accent font-semibold'
-                          : 'hover:bg-surface text-textMain'
-                      }`}
-                    >
-                      <span className="truncate">{win.title || win.processName}</span>
-                      <span className="text-[10px] text-textMuted">
-                        PID: {win.pid} | {win.clientWidth}x{win.clientHeight} ({win.processName})
-                      </span>
-                    </button>
-                  ))
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Honest Status & Real Metrics Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Pipeline & Capture Status Card */}
+      {/* Separate Explicit System Statuses (Requirement 6) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {/* Status 1: Window Enumeration */}
         <div className="cyber-card p-4">
           <div className="flex items-center justify-between text-textMuted mb-2">
-            <span className="text-xs font-medium uppercase tracking-wider">Pipeline Status</span>
-            <Activity className={`w-4 h-4 ${isCapturing ? 'text-success' : 'text-textSubtle'}`} />
+            <span className="text-xs font-medium uppercase tracking-wider">Window Enumeration</span>
+            <Activity className="w-4 h-4 text-accent" />
           </div>
-          <div className="text-base font-bold text-textMain capitalize">
-            {isCapturing ? 'Capturing Active' : 'Pipeline Standby'}
+          <div className="text-sm font-bold text-textMain">
+            {windowEnumerationStatus.success ? (
+              <span className="text-success flex items-center gap-1">
+                <CheckCircle2 className="w-4 h-4" />
+                Active ({candidateWindows.length} windows found)
+              </span>
+            ) : (
+              <span className="text-error flex items-center gap-1">
+                <AlertTriangle className="w-4 h-4" />
+                Failed: {windowEnumerationStatus.error || 'Unreachable'}
+              </span>
+            )}
+          </div>
+          <div className="text-[11px] text-textMuted mt-1">
+            Native Win32 EnumDesktopWindows
+          </div>
+        </div>
+
+        {/* Status 2: Capture Source & Success */}
+        <div className="cyber-card p-4">
+          <div className="flex items-center justify-between text-textMuted mb-2">
+            <span className="text-xs font-medium uppercase tracking-wider">Capture Source & Status</span>
+            <Monitor className="w-4 h-4 text-accentBlue" />
+          </div>
+          <div className="text-sm font-bold text-textMain truncate">
+            {captureSource === 'screen'
+              ? `Screen / Monitor ${selectedMonitorIndex}`
+              : selectedWindow
+                ? selectedWindow.title || selectedWindow.processName
+                : 'No source selected'}
           </div>
           <div className="text-[11px] text-textMuted mt-1">
             {isCapturing ? (
-              <span className="text-success font-semibold">Running full frame OCR loop</span>
+              captureSuccessStatus.success ? (
+                <span className="text-success font-semibold">
+                  Frame Capture Active ({captureSuccessStatus.width}x{captureSuccessStatus.height})
+                </span>
+              ) : (
+                <span className="text-error font-semibold">Capture error: {captureSuccessStatus.error || 'Frame empty'}</span>
+              )
             ) : (
-              <span className="text-textSubtle">Standby (Click Start to activate)</span>
+              <span className="text-textSubtle">Capture Pipeline: Standby</span>
             )}
           </div>
         </div>
 
-        {/* Multi-Region Text Blocks Metric */}
+        {/* Status 3: OCR Status */}
         <div className="cyber-card p-4">
           <div className="flex items-center justify-between text-textMuted mb-2">
-            <span className="text-xs font-medium uppercase tracking-wider">Detected Text Blocks</span>
-            <Layers className="w-4 h-4 text-accent" />
+            <span className="text-xs font-medium uppercase tracking-wider">OCR Status</span>
+            <Clock className="w-4 h-4 text-accent" />
           </div>
-          <div className="text-base font-bold text-textMain flex items-baseline gap-1.5">
-            <span>{detectedBlocks.length}</span>
-            <span className="text-xs text-textMuted font-normal">active regions</span>
+          <div className="text-sm font-bold text-textMain">
+            Windows.Media.Ocr ({warmLatency} ms)
           </div>
           <div className="text-[11px] text-textMuted mt-1">
-            Mode: <strong className="text-accent">{settings.translationMode === 'replacement' ? 'Visual Replacement' : 'Subtitle HUD'}</strong>
+            {detectedBlocks.length} text blocks recognized
           </div>
         </div>
 
-        {/* Real Pipeline Latency */}
+        {/* Status 4: Translation Engine Status */}
         <div className="cyber-card p-4">
           <div className="flex items-center justify-between text-textMuted mb-2">
-            <span className="text-xs font-medium uppercase tracking-wider">Pipeline Latency</span>
-            <Clock className="w-4 h-4 text-accentBlue" />
+            <span className="text-xs font-medium uppercase tracking-wider">Translation Engine</span>
+            <Layers className="w-4 h-4 text-success" />
           </div>
-          <div className="text-base font-bold text-textMain flex items-baseline gap-1.5">
-            <span>{totalLatency}</span>
-            <span className="text-xs text-textMuted font-normal">ms total</span>
-            <span className="text-xs text-textMuted">({warmLatency}ms OCR + {transLatency}ms Trans)</span>
+          <div className="text-sm font-bold text-textMain">
+            Online (Google) + WW Glossary ({transLatency} ms)
           </div>
           <div className="text-[11px] text-textMuted mt-1">
-            Preset: <strong className="text-accent">{settings.pollingSpeed}</strong> ({settings.pollingIntervalMs}ms loop)
+            {latestTranslation?.blocks?.length || 0} blocks translated ({cacheStats.totalEntries} cached)
           </div>
         </div>
 
-        {/* Performance & Memory Cache */}
+        {/* Status 5: Overlay Status */}
+        <div className="cyber-card p-4">
+          <div className="flex items-center justify-between text-textMuted mb-2">
+            <span className="text-xs font-medium uppercase tracking-wider">Overlay Status</span>
+            <Eye className="w-4 h-4 text-accent" />
+          </div>
+          <div className="text-sm font-bold text-textMain">
+            {settings.translationMode === 'replacement' ? 'Visual Text Replacement' : 'Subtitle HUD'}
+          </div>
+          <div className="text-[11px] text-textMuted mt-1">
+            Standalone WPF Transparent Topmost Window (Click-Through)
+          </div>
+        </div>
+
+        {/* Status 6: System Footprint */}
         <div className="cyber-card p-4">
           <div className="flex items-center justify-between text-textMuted mb-2">
             <span className="text-xs font-medium uppercase tracking-wider">System Footprint</span>
             <Cpu className="w-4 h-4 text-warning" />
           </div>
-          <div className="text-base font-bold text-textMain flex items-baseline gap-1.5">
-            <span>{systemMetrics.cpuUsagePercent}%</span>
-            <span className="text-xs text-textMuted font-normal">CPU</span>
-            <span>•</span>
-            <span>{systemMetrics.ramUsageMb}</span>
-            <span className="text-xs text-textMuted font-normal">MB RAM</span>
+          <div className="text-sm font-bold text-textMain">
+            {systemMetrics.cpuUsagePercent}% CPU • {systemMetrics.ramUsageMb} MB RAM
           </div>
-          <div className="text-[11px] text-textMuted mt-1 flex items-center gap-1.5">
-            <Database className="w-3 h-3 text-warning" />
-            <span>Cache: {cacheStats.totalEntries} entries ({cacheStats.estimatedSizeKb} KB)</span>
+          <div className="text-[11px] text-textMuted mt-1">
+            Zero external AI dependencies (Pure Windows APIs)
           </div>
         </div>
       </div>
@@ -406,7 +584,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
           <div className="p-8 text-center bg-background/60 rounded-lg border border-surfaceBorder">
             <p className="text-sm text-textMuted">
               {isCapturing
-                ? 'Scanning active game frame for English text (dialogue, menus, quests)...'
+                ? 'Scanning active frame for English text (dialogue, menus, quests)...'
                 : 'Translator in Standby. Click "Start Full Game Translation" or "Test Full Game Frame" to view live OCR.'}
             </p>
           </div>

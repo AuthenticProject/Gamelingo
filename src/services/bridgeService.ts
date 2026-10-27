@@ -1,4 +1,11 @@
-import { TextBlock, CandidateWindow } from '../types';
+import { 
+  TextBlock, 
+  CandidateWindow, 
+  CaptureSource, 
+  MonitorInfo, 
+  WindowEnumerationStatus, 
+  CaptureSuccessStatus 
+} from '../types';
 
 export interface BackendState {
   isCapturing: boolean;
@@ -7,10 +14,18 @@ export interface BackendState {
   displayMode: 'replacement' | 'subtitle';
   performancePreset: 'performance' | 'balanced' | 'responsive';
   pollingSpeedMs: number;
+
+  captureSource: CaptureSource;
+  selectedMonitorIndex: number;
+  monitors: MonitorInfo[];
+
   gameDetected: boolean;
   manualWindowSelected: boolean;
   selectedWindow: CandidateWindow | null;
   allWindows: CandidateWindow[];
+  windowEnumerationStatus: WindowEnumerationStatus;
+  captureSuccessStatus: CaptureSuccessStatus;
+
   activeRegion: { x: number; y: number; width: number; height: number };
   engineType: string;
   onlineProvider: string;
@@ -18,6 +33,7 @@ export interface BackendState {
   translatedBlockCount: number;
   detectedBlocks: TextBlock[];
   translatedBlocks: TextBlock[];
+
   latestOCR: {
     fullText: string;
     lines: any[];
@@ -66,13 +82,62 @@ export class BridgeService {
     }
   }
 
-  public async getWindows(): Promise<{ success: boolean; gameDetected: boolean; selectedWindow: CandidateWindow | null; windows: CandidateWindow[] } | null> {
+  public async getWindows(): Promise<{
+    success: boolean;
+    gameDetected: boolean;
+    selectedWindow: CandidateWindow | null;
+    windows: CandidateWindow[];
+    error?: string;
+  }> {
     try {
-      const res = await fetch(`${API_BASE}/windows`, { signal: AbortSignal.timeout(2500) });
-      if (!res.ok) return null;
+      const res = await fetch(`${API_BASE}/windows`, { signal: AbortSignal.timeout(4500) });
+      const data = await res.json();
+      return data;
+    } catch (err: any) {
+      return {
+        success: false,
+        gameDetected: false,
+        selectedWindow: null,
+        windows: [],
+        error: `Backend unreachable on port 5174 (${err.message || 'Connection refused'})`,
+      };
+    }
+  }
+
+  public async getMonitors(): Promise<{ success: boolean; monitors: MonitorInfo[]; selectedMonitorIndex: number }> {
+    try {
+      const res = await fetch(`${API_BASE}/monitors`, { signal: AbortSignal.timeout(3000) });
       return await res.json();
     } catch {
-      return null;
+      return { success: false, monitors: [], selectedMonitorIndex: 0 };
+    }
+  }
+
+  public async selectSource(source: CaptureSource, handle?: number, monitorIndex?: number): Promise<boolean> {
+    try {
+      const res = await fetch(`${API_BASE}/select-source`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source, handle, monitorIndex }),
+        signal: AbortSignal.timeout(3000),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  public async pickForeground(delayMs = 3000): Promise<{ success: boolean; selectedWindow?: CandidateWindow; error?: string }> {
+    try {
+      const res = await fetch(`${API_BASE}/pick-foreground`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ delayMs }),
+        signal: AbortSignal.timeout(delayMs + 4000),
+      });
+      return await res.json();
+    } catch (err: any) {
+      return { success: false, error: err.message };
     }
   }
 
@@ -82,7 +147,7 @@ export class BridgeService {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ handle }),
-        signal: AbortSignal.timeout(2000),
+        signal: AbortSignal.timeout(3000),
       });
       return res.ok;
     } catch {
@@ -137,7 +202,7 @@ export class BridgeService {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text }),
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(6000),
       });
       return await res.json();
     } catch {

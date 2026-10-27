@@ -69,7 +69,7 @@ namespace GameLingo {
                 edgePath = @"C:\Program Files\Microsoft\Edge\Application\msedge.exe";
             }
 
-            string appUrl = "http://localhost:5173";
+            string appUrl = "http://localhost:5174";
 
             if (File.Exists(edgePath)) {
                 ProcessStartInfo psi = new ProcessStartInfo {

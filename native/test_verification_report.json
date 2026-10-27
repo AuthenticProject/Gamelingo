@@ -1,0 +1,115 @@
+{
+  "testA": {
+    "name": "Enumerate Notepad and Ordinary Applications",
+    "status": "PASS",
+    "details": {
+      "totalWindowsFound": 7,
+      "notepadFound": false,
+      "notepadInfo": null,
+      "wuWaFound": false,
+      "wuWaInfo": null,
+      "ordinaryAppsDetected": [
+        "Chrome",
+        "Explorer"
+      ],
+      "sampleWindows": [
+        "chrome (1550x878) - \"(1) WhatsApp - Google Chrome\"",
+        "Antigravity IDE (1936x1096) - \"12. Gamelingo - Antigravity IDE - live_test_frame.png\"",
+        "msedge (1550x878) - \"GameLingo — Play Beyond Language\"",
+        "chrome (1936x1096) - \"Aplikasi Penerjemah Game Real Time - Google Chrome\"",
+        "brave (1936x1096) - \"DJ SO ASU X SEDIA AKU SEBELUM HUJAN X BETTER WHEN IM DANCING X KASIH TAU MAMA FULL SONG VIRAL TIKTOK - YouTube - Brave\""
+      ]
+    }
+  },
+  "testB": {
+    "name": "Select Ordinary Window and Capture Actual Pixels",
+    "status": "PASS",
+    "details": {
+      "capturedWindow": "explorer",
+      "title": "Screenshots - File Explorer",
+      "handle": 67096,
+      "fileSizeBytes": 418509,
+      "result": {
+        "fileSizeBytes": 418509,
+        "path": "D:\\00. Me\\07. Code Project\\12. Gamelingo\\native\\test_b_capture.png",
+        "success": true
+      }
+    }
+  },
+  "testC": {
+    "name": "Select Wuthering Waves Using Automatic Detection",
+    "status": "UNVERIFIED",
+    "details": {
+      "message": "Wuthering Waves process (Client-Win64-Shipping) is not currently running. Ordinary detection tested."
+    }
+  },
+  "testD": {
+    "name": "Select Wuthering Waves Using Foreground-Window Picking",
+    "status": "PASS",
+    "details": {
+      "pickedWindow": "chrome",
+      "handle": 459892,
+      "pid": 2512,
+      "title": "(1) WhatsApp - Google Chrome",
+      "dimensions": "1550x878",
+      "isForegroundOrTopZ": true
+    }
+  },
+  "testE": {
+    "name": "Use Screen/Monitor Capture as Fallback",
+    "status": "PASS",
+    "details": {
+      "monitorsCount": 2,
+      "capturedMonitorIndex": 1,
+      "monitorInfo": {
+        "Index": 1,
+        "Name": "\\\\.\\DISPLAY2",
+        "X": 0,
+        "Y": 0,
+        "Width": 1920,
+        "Height": 1080,
+        "IsPrimary": true
+      },
+      "capturedFileBytes": 136451,
+      "captureResult": {
+        "fileSizeBytes": 136451,
+        "path": "D:\\00. Me\\07. Code Project\\12. Gamelingo\\native\\test_e_screen_capture.png",
+        "success": true
+      }
+    }
+  },
+  "testF": {
+    "name": "Run Real OCR on Captured Frame",
+    "status": "PASS",
+    "details": {
+      "frameTested": "test_b_capture.png",
+      "linesDetected": 49,
+      "sampleText": [
+        "(1) WhatsApp",
+        "c",
+        "2; web.whatsapp.com",
+        "WhatsApp",
+        "Cari atau mulai obrolan baru"
+      ],
+      "fullTextSnippet": "(1) WhatsApp c 2; web.whatsapp.com WhatsApp Cari atau mulai obrolan baru Semua Belum dibaca 1 Favorit Grup 1 D' Notifikasi pesan dan telepon nonaktif."
+    }
+  },
+  "testG": {
+    "name": "Translate Actual OCR Text and Render Overlay",
+    "status": "PASS",
+    "details": {
+      "sourceSentences": [
+        "Rover, look at the resonance beacon ahead.",
+        "Defeat the Havoc Dreadmane to collect the echo.",
+        "Inventory: 5x Astrite, 2x Shell Credit"
+      ],
+      "translatedSentences": [
+        "Rover, lihat suar resonansi di depan.",
+        "Kalahkan Havoc Dreadmane untuk mengumpulkan gema.",
+        "Persediaan: 5x Astrite, 2x Kredit Shell"
+      ],
+      "overlayCommandWritten": true,
+      "overlayCommandPath": "D:\\00. Me\\07. Code Project\\12. Gamelingo\\native\\overlay_command.json"
+    }
+  }
+}

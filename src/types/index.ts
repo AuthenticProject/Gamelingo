@@ -58,6 +58,40 @@ export interface TranslationResult {
   boxes?: BoundingBox[];
 }
 
+export type CaptureSource = 'window' | 'screen';
+
+export interface MonitorInfo {
+  index: number;
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  isPrimary: boolean;
+  Index?: number;
+  Name?: string;
+  X?: number;
+  Y?: number;
+  Width?: number;
+  Height?: number;
+  IsPrimary?: boolean;
+}
+
+export interface WindowEnumerationStatus {
+  success: boolean;
+  count: number;
+  error: string | null;
+  lastUpdated: number;
+}
+
+export interface CaptureSuccessStatus {
+  success: boolean;
+  error: string | null;
+  width: number;
+  height: number;
+  timestamp: number;
+}
+
 export interface CandidateWindow {
   handle: number;
   pid: number;
@@ -124,6 +158,8 @@ export interface AppSettings {
   sourceLanguage: string;
   translationMode: TranslationMode;
   captureMode: CaptureMode;
+  captureSource?: CaptureSource;
+  selectedMonitorIndex?: number;
   engineType: TranslationEngineType;
   onlineProvider: OnlineProvider;
   pollingSpeed: PollingSpeed;

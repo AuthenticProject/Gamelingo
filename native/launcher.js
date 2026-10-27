@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
+const distPath = path.resolve(projectRoot, 'dist');
 
 const PORT = 5174;
 const FRONTEND_PORT = 5173;
@@ -22,11 +23,18 @@ const state = {
   performancePreset: 'balanced', // 'performance' | 'balanced' | 'responsive'
   pollingSpeedMs: 500,
 
+  // Capture Source: 'window' | 'screen'
+  captureSource: 'window',
+  selectedMonitorIndex: 0,
+  monitors: [],
+
   // Window targeting & detection
   gameDetected: false,
   manualWindowSelected: false,
   selectedWindow: null,     // { handle, pid, title, processName, clientWidth, clientHeight, clientScreenX, clientScreenY }
   allWindows: [],
+  windowEnumerationStatus: { success: false, count: 0, error: null, lastUpdated: 0 },
+  captureSuccessStatus: { success: false, error: null, width: 0, height: 0, timestamp: 0 },
 
   activeRegion: { x: 384, y: 820, width: 1152, height: 216 },
   engineType: 'hybrid',     // online | hybrid | offline
@@ -163,18 +171,17 @@ async function translateBatch(texts) {
     state.stats.transAvgMs = Math.round((state.stats.transAvgMs + latency) / 2);
   } catch (err) {
     uncachedIndices.forEach(idx => {
-      results[idx] = texts[idx]; // fallback to original
+      results[idx] = texts[idx];
     });
   }
 
   return results;
 }
 
-// 2. Intelligent Multi-Region Line & Block Clustering Algorithm
+// 2. Multi-Region Line & Block Clustering Algorithm
 function clusterLinesIntoBlocks(rawLines, frameWidth = 1920, frameHeight = 1080) {
   if (!rawLines || rawLines.length === 0) return [];
 
-  // 1. Calculate bounding box for each line from its words
   const lines = rawLines.map((l, idx) => {
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     (l.words || []).forEach(w => {
@@ -201,13 +208,11 @@ function clusterLinesIntoBlocks(rawLines, frameWidth = 1920, frameHeight = 1080)
     };
   }).filter(l => l.text.length > 0);
 
-  // 2. Sort lines top-to-bottom, then left-to-right
   lines.sort((a, b) => {
     if (Math.abs(a.box.y - b.box.y) > 15) return a.box.y - b.box.y;
     return a.box.x - b.box.x;
   });
 
-  // 3. Cluster into logical blocks
   const blocks = [];
   const assigned = new Set();
 
@@ -225,18 +230,14 @@ function clusterLinesIntoBlocks(rawLines, frameWidth = 1920, frameHeight = 1080)
         if (assigned.has(j)) continue;
         const candidate = lines[j];
 
-        // Horizontal void check: do not merge distant columns
         const horizontalVoid = (candidate.box.x > blockBox.x + blockBox.width) 
           ? (candidate.box.x - (blockBox.x + blockBox.width))
           : (blockBox.x > candidate.box.x + candidate.box.width)
             ? (blockBox.x - (candidate.box.x + candidate.box.width))
             : 0;
 
-        if (horizontalVoid > 120) {
-          continue;
-        }
+        if (horizontalVoid > 120) continue;
 
-        // Vertical distance check
         const verticalGap = candidate.box.y - (blockBox.y + blockBox.height);
         const avgHeight = Math.max(14, blockBox.height / currentBlockLines.length);
         const isVerticallyAdjacent = verticalGap >= -8 && verticalGap <= avgHeight * 1.6;
@@ -248,7 +249,6 @@ function clusterLinesIntoBlocks(rawLines, frameWidth = 1920, frameHeight = 1080)
         const leftIndentDiff = Math.abs(blockBox.x - candidate.box.x);
         const isHorizontallyCompatible = (horizontalOverlap > 10) || (leftIndentDiff < 60);
 
-        // Dialogue speaker ("Rover:") merging with text immediately below it
         const isSpeakerAndDialogue = blockBox.y > frameHeight * 0.7 && verticalGap <= 50 && leftIndentDiff < 100;
 
         if ((isVerticallyAdjacent && isHorizontallyCompatible) || isSpeakerAndDialogue) {
@@ -270,7 +270,6 @@ function clusterLinesIntoBlocks(rawLines, frameWidth = 1920, frameHeight = 1080)
       }
     }
 
-    // Determine semantic category
     let category = 'ui_element';
     const textJoined = currentBlockLines.map(l => l.text).join(' ');
 
@@ -365,7 +364,7 @@ function updateOverlay(blocks, text, meta) {
   } catch {}
 }
 
-// 5. Win32 Window Discovery & Management
+// 5. Win32 Window & Monitor Discovery
 function refreshActiveWindows() {
   try {
     const scriptPath = path.join(__dirname, 'get_windows.ps1');
@@ -388,6 +387,13 @@ function refreshActiveWindows() {
         isGameCandidate: w.IsGameCandidate
       }));
 
+      state.windowEnumerationStatus = {
+        success: true,
+        count: state.allWindows.length,
+        error: null,
+        lastUpdated: Date.now()
+      };
+
       // Auto-detect Wuthering Waves if not manually locked
       if (!state.manualWindowSelected) {
         const gameWin = state.allWindows.find(w => {
@@ -406,14 +412,66 @@ function refreshActiveWindows() {
           }
         }
       }
+      return { success: true, windows: state.allWindows };
     }
   } catch (err) {
-    // console.error('[Window Probe Error]', err.message);
+    state.windowEnumerationStatus = {
+      success: false,
+      count: 0,
+      error: err.message,
+      lastUpdated: Date.now()
+    };
+    return { success: false, error: err.message, windows: [] };
   }
 }
 
-// Run initial window probe
+function refreshMonitors() {
+  try {
+    const scriptPath = path.join(__dirname, 'get_monitors.ps1');
+    const out = execSync(`powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}"`, { timeout: 4000 }).toString().trim();
+    if (out) {
+      let parsed = JSON.parse(out);
+      if (!Array.isArray(parsed)) parsed = [parsed];
+      state.monitors = parsed;
+    }
+  } catch {}
+}
+
+function pickForegroundWindow() {
+  try {
+    const scriptPath = path.join(__dirname, 'pick_foreground.ps1');
+    const out = execSync(`powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}"`, { timeout: 4000 }).toString().trim();
+    if (out && out !== 'null') {
+      const w = JSON.parse(out);
+      const match = {
+        handle: w.Handle,
+        pid: w.Pid,
+        processName: w.ProcessName,
+        title: w.Title,
+        className: w.ClassName,
+        width: w.Width,
+        height: w.Height,
+        clientWidth: w.ClientWidth,
+        clientHeight: w.ClientHeight,
+        clientScreenX: w.ClientScreenX,
+        clientScreenY: w.ClientScreenY,
+        isGameCandidate: w.IsGameCandidate
+      };
+      state.selectedWindow = match;
+      state.manualWindowSelected = true;
+      state.captureSource = 'window';
+      state.gameDetected = true;
+      return { success: true, selectedWindow: match };
+    }
+    return { success: false, error: 'Could not resolve foreground window' };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+}
+
+// Initial probe
 refreshActiveWindows();
+refreshMonitors();
 
 // 6. Capture Frame
 function captureFrame(outputPath) {
@@ -430,7 +488,35 @@ function captureFrame(outputPath) {
   }
 
   const scriptPath = path.join(__dirname, 'do_capture.ps1');
-  execSync(`powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}" -Hwnd ${hwnd} -OutputPath "${resolvedOut}" -CropX ${cropX} -CropY ${cropY} -CropW ${cropW} -CropH ${cropH}`, { timeout: 3000 });
+  const src = state.captureSource === 'screen' ? 'screen' : 'window';
+  const monIdx = state.selectedMonitorIndex || 0;
+
+  try {
+    execSync(`powershell.exe -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}" -CaptureSource "${src}" -Hwnd ${hwnd} -MonitorIndex ${monIdx} -OutputPath "${resolvedOut}" -CropX ${cropX} -CropY ${cropY} -CropW ${cropW} -CropH ${cropH}`, { timeout: 3500 });
+    
+    if (fs.existsSync(resolvedOut)) {
+      const stats = fs.statSync(resolvedOut);
+      if (stats.size > 100) {
+        state.captureSuccessStatus = {
+          success: true,
+          error: null,
+          width: state.selectedWindow?.clientWidth || 1920,
+          height: state.selectedWindow?.clientHeight || 1080,
+          timestamp: Date.now()
+        };
+        return true;
+      }
+    }
+  } catch (err) {
+    state.captureSuccessStatus = {
+      success: false,
+      error: err.message,
+      width: 0,
+      height: 0,
+      timestamp: Date.now()
+    };
+  }
+  return false;
 }
 
 // 7. Live Pipeline Tick
@@ -443,17 +529,14 @@ async function runCaptureTick() {
     state.stats.totalFramesProcessed++;
     const framePath = path.join(__dirname, 'current_frame.png');
 
-    // 1. Capture target window / full client
-    captureFrame(framePath);
+    const ok = captureFrame(framePath);
 
-    if (fs.existsSync(framePath)) {
-      // 2. Fast Frame Difference Detection (Perceptual Hash / Byte Sample)
+    if (ok && fs.existsSync(framePath)) {
       const fileBuffer = fs.readFileSync(framePath);
       const hash = crypto.createHash('md5').update(fileBuffer.subarray(0, Math.min(fileBuffer.length, 65536))).digest('hex');
 
       if (hash === state.lastFrameHash) {
         state.consecutiveStaticFrames++;
-        // Frame is identical to previous: sleep adaptive interval
         const adaptiveInterval = state.performancePreset === 'performance' ? 1000 : (state.performancePreset === 'responsive' ? 350 : 600);
         if (state.isCapturing) {
           captureTimer = setTimeout(runCaptureTick, adaptiveInterval);
@@ -464,13 +547,11 @@ async function runCaptureTick() {
       state.lastFrameHash = hash;
       state.consecutiveStaticFrames = 0;
 
-      // 3. Multi-Region Warm OCR
       const ocrResult = await runWarmOCR(framePath);
 
       if (ocrResult && ocrResult.success) {
         state.stats.ocrAvgMs = ocrResult.warmOcrLatencyMs || 20;
 
-        // 4. Cluster lines into logical blocks
         const frameW = state.selectedWindow?.clientWidth || 1920;
         const frameH = state.selectedWindow?.clientHeight || 1080;
         const blocks = clusterLinesIntoBlocks(ocrResult.lines, frameW, frameH);
@@ -485,7 +566,6 @@ async function runCaptureTick() {
         };
 
         if (blocks.length > 0) {
-          // 5. Batch Translate all uncached blocks
           const blockTexts = blocks.map(b => b.text);
           const sw = performance.now();
           const translations = await translateBatch(blockTexts);
@@ -499,7 +579,6 @@ async function runCaptureTick() {
           state.translatedBlockCount = translatedBlocks.length;
           state.translatedBlocks = translatedBlocks;
 
-          // Find primary dialogue block if any
           const dialogueBlock = translatedBlocks.find(b => b.category === 'dialogue') || translatedBlocks[0];
 
           state.latestTranslation = {
@@ -511,12 +590,10 @@ async function runCaptureTick() {
             timestamp: Date.now()
           };
 
-          // 6. Update Real Desktop Overlay
           const totalLat = (ocrResult.warmOcrLatencyMs || 20) + transLatency;
           const meta = `GameLingo ${state.captureMode.toUpperCase()} | Blocks: ${translatedBlocks.length} | Latency: ${totalLat}ms`;
           updateOverlay(translatedBlocks, dialogueBlock ? dialogueBlock.translatedText : '', meta);
         } else {
-          // No text in frame (game cinematic without subtitles or loading screen)
           state.detectedBlockCount = 0;
           state.translatedBlockCount = 0;
           state.detectedBlocks = [];
@@ -526,7 +603,7 @@ async function runCaptureTick() {
       }
     }
   } catch (err) {
-    // console.error('[Pipeline Tick Error]', err.message);
+    // console.error(err);
   }
 
   if (state.isCapturing) {
@@ -534,7 +611,40 @@ async function runCaptureTick() {
   }
 }
 
-// 8. IPC HTTP Server
+// 8. Static File Helpers (Serving dist/ directly so no Vite dependency is required)
+const MIME_TYPES = {
+  '.html': 'text/html; charset=UTF-8',
+  '.js': 'application/javascript; charset=UTF-8',
+  '.css': 'text/css; charset=UTF-8',
+  '.json': 'application/json; charset=UTF-8',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon'
+};
+
+function serveStatic(req, res) {
+  let reqPath = new URL(req.url, `http://localhost:${PORT}`).pathname;
+  if (reqPath.startsWith('/api')) return false;
+
+  if (reqPath === '/') reqPath = '/index.html';
+
+  let filePath = path.join(distPath, reqPath);
+  if (!fs.existsSync(filePath)) {
+    filePath = path.join(distPath, 'index.html');
+  }
+
+  if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+    const ext = path.extname(filePath).toLowerCase();
+    const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+    res.writeHead(200, { 'Content-Type': contentType });
+    fs.createReadStream(filePath).pipe(res);
+    return true;
+  }
+  return false;
+}
+
+// 9. IPC HTTP Server
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -555,14 +665,100 @@ const server = http.createServer(async (req, res) => {
 
   // Windows list endpoint
   if (url.pathname === '/api/windows') {
-    refreshActiveWindows();
+    const winResult = refreshActiveWindows();
+    if (winResult && winResult.success) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        success: true,
+        gameDetected: state.gameDetected,
+        selectedWindow: state.selectedWindow,
+        windows: state.allWindows,
+        status: state.windowEnumerationStatus
+      }));
+    } else {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        success: false,
+        error: winResult?.error || 'Window enumeration failed',
+        windows: state.allWindows || [],
+        status: state.windowEnumerationStatus
+      }));
+    }
+    return;
+  }
+
+  // Monitors list endpoint
+  if (url.pathname === '/api/monitors') {
+    refreshMonitors();
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       success: true,
-      gameDetected: state.gameDetected,
-      selectedWindow: state.selectedWindow,
-      windows: state.allWindows
+      monitors: state.monitors,
+      selectedMonitorIndex: state.selectedMonitorIndex
     }));
+    return;
+  }
+
+  // Select capture source (Window vs Screen)
+  if (url.pathname === '/api/select-source' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', () => {
+      try {
+        const { source, handle, monitorIndex } = JSON.parse(body || '{}');
+        if (source === 'screen') {
+          state.captureSource = 'screen';
+          if (monitorIndex !== undefined) state.selectedMonitorIndex = monitorIndex;
+        } else {
+          state.captureSource = 'window';
+          if (handle) {
+            const match = state.allWindows.find(w => String(w.handle) === String(handle));
+            if (match) {
+              state.selectedWindow = match;
+              state.manualWindowSelected = true;
+            }
+          }
+        }
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          success: true,
+          captureSource: state.captureSource,
+          selectedWindow: state.selectedWindow,
+          selectedMonitorIndex: state.selectedMonitorIndex
+        }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: e.message }));
+      }
+    });
+    return;
+  }
+
+  // Pick Foreground Window endpoint (with countdown delay support)
+  if (url.pathname === '/api/pick-foreground' && req.method === 'POST') {
+    let body = '';
+    req.on('data', chunk => body += chunk);
+    req.on('end', async () => {
+      try {
+        const { delayMs = 3000 } = JSON.parse(body || '{}');
+        // Countdown sleep if requested
+        if (delayMs > 0) {
+          await new Promise(r => setTimeout(r, delayMs));
+        }
+
+        const result = pickForegroundWindow();
+        if (result.success) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(result));
+        } else {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(result));
+        }
+      } catch (e) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, error: e.message }));
+      }
+    });
     return;
   }
 
@@ -577,7 +773,8 @@ const server = http.createServer(async (req, res) => {
         if (match) {
           state.selectedWindow = match;
           state.manualWindowSelected = true;
-          state.gameDetected = true; // Manual selection enables capture even if auto-detect didn't match name
+          state.captureSource = 'window';
+          state.gameDetected = true;
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: true, selectedWindow: match }));
         } else {
@@ -637,6 +834,8 @@ const server = http.createServer(async (req, res) => {
         const update = JSON.parse(body || '{}');
         if (update.captureMode) state.captureMode = update.captureMode;
         if (update.displayMode) state.displayMode = update.displayMode;
+        if (update.captureSource) state.captureSource = update.captureSource;
+        if (update.selectedMonitorIndex !== undefined) state.selectedMonitorIndex = update.selectedMonitorIndex;
         if (update.performancePreset) {
           state.performancePreset = update.performancePreset;
           if (update.performancePreset === 'performance') state.pollingSpeedMs = 1000;
@@ -698,9 +897,7 @@ const server = http.createServer(async (req, res) => {
           timestamp: Date.now()
         };
 
-        // Also copy sample_game_frame.png to current_frame.png so DiagnosticsPage displays it!
         fs.copyFileSync(sampleFramePath, path.join(__dirname, 'current_frame.png'));
-
         updateOverlay(translatedBlocks, dialogue ? dialogue.translatedText : '', `Test Full Game Frame | ${translatedBlocks.length} Blocks`);
 
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -735,23 +932,21 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Serve static files from dist/ (SPA Production Server)
+  if (serveStatic(req, res)) {
+    return;
+  }
+
   res.writeHead(404, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify({ error: 'Endpoint not found' }));
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  console.log(`[GameLingo IPC Server] Active on http://127.0.0.1:${PORT}`);
+  console.log(`[GameLingo Unified Server] Active on http://127.0.0.1:${PORT} (Serving API and Production App)`);
 
-  // Launch Vite Frontend Dev Server
-  const viteProcess = spawn('cmd.exe', ['/c', 'npm.cmd', 'run', 'dev'], {
-    cwd: projectRoot,
-    stdio: 'inherit',
-    shell: true,
-  });
-
-  // Launch WebView2 Desktop App Window
+  // Launch WebView2 Desktop App Window pointing to unified server
   setTimeout(() => {
-    const appUrl = `http://localhost:${FRONTEND_PORT}`;
+    const appUrl = `http://localhost:${PORT}`;
     const edgePaths = [
       'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
       'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
@@ -767,13 +962,12 @@ server.listen(PORT, '127.0.0.1', () => {
         '--user-data-dir=D:\\tmp\\gamelingo_profile'
       ], { detached: true, stdio: 'ignore' });
     }
-  }, 2500);
+  }, 2000);
 
   process.on('SIGINT', () => {
     state.isCapturing = false;
     ocrWorker.kill();
     overlayProcess.kill();
-    viteProcess.kill();
     server.close();
     process.exit();
   });
